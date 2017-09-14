@@ -1,5 +1,6 @@
 import {ascending, min, sum} from "d3-array";
 import {map, nest} from "d3-collection";
+import linkHorizontal from "./sankeyLinkHorizontal";
 import {justify} from "./align";
 import constant from "./constant";
 
@@ -76,52 +77,6 @@ function find(nodeById, id) {
     })
   }
 
-  function selectCircularLinkTypes (graph) {
-    graph.links.forEach(function (link) {
-      //console.log(link.target.circularLinkType)
-
-      if (link.circular) {
-        //if either souce or target has type already use that
-        if ( link.source.circularLinkType || link.target.circularLinkType) {
-          //default to source type if available
-          link.circularLinkType = link.source.circularLinkType ? link.source.circularLinkType : link.target.circularLinkType;
-
-        }
-        else {
-          link.circularLinkType = link.circularLinkID % 2 == 0
-            ? 'bottom'
-            : 'top'
-        }
-
-
-
-
-        graph.nodes.forEach(function (node) {
-          if (node.name == link.source.name || node.name == link.target.name) {
-            node.circularLinkType = link.circularLinkType
-          }
-        })
-      }
-
-      // if the target and source have the same circularLinkType, use that
-      /* if (
-        link.source.circularLinkType &&
-        link.source.circularLinkType === link.target.circularLinkType
-      ) {
-        console.log(link.circularLinkID + ' reusing')
-        return link.source.circularLinkType
-      } else if (link.source.circularLinkType) {
-        // if only one of the target/source has a circularLinkType, use that
-        console.log(link.circularLinkID + ' reusing source')
-        return link.source.circularLinkType
-      } else {
-        // assign random?
-        console.log(link.circularLinkID + ' random')
-        return
-      } */
-    })
-  }
-
   // Checks if link creates a cycle
   function createsCycle (originalSource, nodeToCheck, graph) {
     if (graph.length == 0) {
@@ -166,94 +121,6 @@ function find(nodeById, id) {
     return children
   }
 
-  // create a path for circle paths
-  /* function computeCirclePath (d) {
-
-    //distance back to target node
-    let circularLinkDistance =  d.source.depth - d.target.depth;
-
-    //distance out from the node
-    var leftNodeBuffer = 40 - (40 * (d.y0/height));
-    var rightNodeBuffer = 40 - (40 * (d.y1/height));
-
-    //how far below the nodes the path will go, more so for longer distances
-    var verticalBuffer = 20 * circularLinkDistance;
-
-    //radius of the corners of the path
-    var arcRadius = d.width + 10;
-
-    var leftInnerExtent = d.source.x1 + leftNodeBuffer;
-    var leftFullExtent = d.source.x1 + arcRadius + leftNodeBuffer;
-    var rightInnerExtent = d.target.x0 - rightNodeBuffer;
-    var rightFullExtent = d.target.x0 - arcRadius - rightNodeBuffer;
-    var bottomInnerExtent = height + verticalBuffer;
-    var bottomFullExtent = height + verticalBuffer + arcRadius;
-
-    let path =
-      // start at the right of the source node
-      "M" + d.source.x1 + " " + d.y0 + " " +
-
-      // line right to buffer point
-      "L" + leftInnerExtent + " " + d.y0 + " " +
-
-      //Arc around: Centre of arc X and  //Centre of arc Y
-      "A" + arcRadius + " " + arcRadius + " 0 0 1 " +
-      //End of arc X //End of arc Y
-      leftFullExtent + " " + (d.y0 + arcRadius) + " " + //End of arc X
-
-      // line down to buffer point
-      "L" + leftFullExtent + " " + bottomInnerExtent + " " +
-
-      //Arc around: Centre of arc X and  //Centre of arc Y
-      "A" + arcRadius + " " + arcRadius + " 0 0 1 " +
-      //End of arc X //End of arc Y
-      leftInnerExtent + " " + bottomFullExtent + " " + //End of arc X
-
-      // line left to buffer point
-      "L" + rightInnerExtent + " " + bottomFullExtent + " " +
-
-      //Arc around: Centre of arc X and  //Centre of arc Y
-      "A" + arcRadius + " " + arcRadius + " 0 0 1 " +
-      //End of arc X //End of arc Y
-      rightFullExtent + " " + bottomInnerExtent + " " + //End of arc X
-
-      // line up
-      "L" + rightFullExtent + " " + (d.y1 + arcRadius) + " " +
-
-      //Arc around: Centre of arc X and  //Centre of arc Y
-      "A" + arcRadius + " " + arcRadius + " 0 0 1 " +
-      //End of arc X //End of arc Y
-      rightInnerExtent + " " + d.y1 + " " + //End of arc X
-
-      //line to end
-      "L" +  d.target.x0 + " " + d.y1;
-
-    return path
-  } */
-
-  /// /////////////////////////////////////////////////////////////////////////////////
-
-  /* var curveSankeyLink = function () {
-    return function (d) {
-      let path = ''
-      if (d.circular) {
-        path = computeCirclePath(d)
-      } else {
-        var normalPath = d3Shape
-          .linkHorizontal()
-          .source(function (d) {
-            return [d.source.x1, d.y0]
-          })
-          .target(function (d) {
-            return [d.target.x0, d.y1]
-          })
-        path = normalPath(d)
-      }
-      return path
-    }
-  } */
-
-
 export default function() {
   var x0 = 0, y0 = 0, x1 = 1, y1 = 1, // extent
       dx = 24, // nodeWidth
@@ -262,7 +129,14 @@ export default function() {
       align = justify,
       nodes = defaultNodes,
       links = defaultLinks,
-      iterations = 32;
+      iterations = 32,
+      // cycle features
+      cycleLaneNarrowWidth = 4,
+      cycleLaneDistFromFwdPaths = -10,  // the distance above the paths to start showing 'cycle lanes'
+      cycleDistFromNode = 30,      // linear path distance before arcing from node
+      cycleControlPointDist = 30,  // controls the significance of the cycle's arc
+      cycleSmallWidthBuffer = 2  // distance between 'cycle lanes'
+;
 
   //var padding =  Infinity;
   var paddingRatio = 0.1;
@@ -271,7 +145,6 @@ export default function() {
     var graph = {nodes: nodes.apply(null, arguments), links: links.apply(null, arguments)};
     computeNodeLinks(graph);
     identifyCircles(graph)
-    selectCircularLinkTypes(graph)
     computeNodeValues(graph);
     computeNodeDepths(graph);
     computeNodeBreadths(graph, iterations);
@@ -283,6 +156,15 @@ export default function() {
     computeLinkBreadths(graph);
     return graph;
   };
+
+  sankey.link = function(l) {
+    if(l.circular) {
+      return sankey.cycleLink(l);
+    } else {
+      return linkHorizontal()(l);
+    }
+
+  }
 
   sankey.nodeId = function(_) {
     return arguments.length ? (id = typeof _ === "function" ? _ : constant(_), sankey) : id;
@@ -321,8 +203,73 @@ export default function() {
   };
 
   sankey.nodePaddingRatio = function (_) {
-      return arguments.length ? ((paddingRatio = +_), sankey) : paddingRatio
+      return arguments.length ? ((paddingRatio = +_), sankey) : paddingRatio;
     }
+    // cycle related attributes
+  sankey.cycleLaneNarrowWidth = function(_) {
+    return arguments.length ? (cycleLaneNarrowWidth = +_, sankey) : cycleLaneNarrowWidth;
+  }
+
+  sankey.cycleSmallWidthBuffer = function(_) {
+    return arguments.length ? (cycleSmallWidthBuffer = +_, sankey) : cycleSmallWidthBuffer;
+  }
+
+  sankey.cycleLaneDistFromFwdPaths = function(_) {
+    return arguments.length ? (cycleLaneDistFromFwdPaths = +_, sankey) : cycleLaneDistFromFwdPaths;
+  }
+
+  sankey.cycleDistFromNode = function(_) {
+    return arguments.length ? (cycleDistFromNode = +_, sankey) : cycleDistFromNode;
+  }
+
+  sankey.cycleControlPointDist = function(_) {
+    return arguments.length ? (cycleControlPointDist = +_, sankey) : cycleControlPointDist;
+  }
+
+  sankey.cycleLink = function (d) {
+      /*
+      The path will look like this, where
+      s=source, t=target, ?q=quadratic focus point
+     (wq)-> /-----n-----\
+            |w          |
+            |           e
+            \-t         |
+                     s--/ <-(eq)
+      */
+      // Enclosed shape using curves n' stuff
+      var smallWidth = cycleLaneNarrowWidth,
+      s_x = d.source.x0 + (d.source.x1 - d.source.x0),
+      s_y = d.source.y0 + (d.y0 - d.source.y0 - d.width / 2) + d.width,
+      t_x = d.target.x0,
+      t_y = d.target.y0,
+      se_x = s_x + cycleDistFromNode,
+      se_y = s_y,
+      ne_x = se_x,
+      ne_y = cycleLaneDistFromFwdPaths - (d.circularLinkID * (smallWidth + cycleSmallWidthBuffer) ),  // above regular paths, in it's own 'cycle lane', with a buffer around it
+      nw_x = t_x - cycleDistFromNode,
+      nw_y = ne_y,
+      sw_x = nw_x,
+      sw_y = t_y + (d.y1 - d.target.y0 - d.width / 2)+ d.width;
+
+      // start the path on the outer path boundary
+      return "M" + s_x + "," + s_y
+		+ "L" + se_x + "," + se_y
+		+ "C" + (se_x + cycleControlPointDist) + "," + se_y + " " + (ne_x + cycleControlPointDist) + "," + ne_y + " " + ne_x + "," + ne_y
+		+ "H" + nw_x
+		+ "C" + (nw_x - cycleControlPointDist) + "," + nw_y + " " + (sw_x - cycleControlPointDist) + "," + sw_y + " " + sw_x + "," + sw_y
+		+ "H" + t_x
+		//moving to inner path boundary
+		+ "V" + ( t_y + (d.y1 - d.target.y0 - d.width / 2) )
+		+ "H" + sw_x
+		+ "C" + (sw_x - (cycleControlPointDist/2) + smallWidth) + "," + t_y + " " +
+    (nw_x - (cycleControlPointDist/2) + smallWidth) + "," + (nw_y + smallWidth) + " " +
+				nw_x + "," + (nw_y + smallWidth)
+		+ "H" + (ne_x - smallWidth)
+		+ "C" + (ne_x + (cycleControlPointDist/2) - smallWidth) + "," + (ne_y + smallWidth) + " " +
+    (se_x + (cycleControlPointDist/2) - smallWidth) + "," + (se_y - d.width) + " " +
+				se_x + "," + (se_y - d.width)
+		+ "L" + s_x + "," + (s_y - d.width);
+  }
 
   // Populate the sourceLinks and targetLinks for each node.
   // Also, if the source and target are not objects, assume they are indices.
@@ -423,20 +370,9 @@ export default function() {
     }
 
     function initializeNodeBreadth() {
-     //console.log(paddingRatio);
-
-      // columns.forEach(function(nodes){
-      //   let thisPadding = (y1 * paddingRatio) / (nodes.length + 1)
-      //   padding = thisPadding < padding ? thisPadding : padding;
-      // })
-      //
-      // py = padding;
-      //console.log(py);
       var ky = min(columns, function(nodes) {
         return (y1 - y0 - (nodes.length - 1) * py) / sum(nodes, value);
       });
-
-      //ky = ky / 2 ;
 
       columns.forEach(function(nodes) {
         var nodesLength = nodes.length
@@ -450,7 +386,6 @@ export default function() {
                 node.y1 = node.y0 + node.value * ky
               }
             } else {
-              // node.y1 = (node.y0 = i) + node.value * ky
               node.y0 = (y1 - y0) / 2 - nodesLength / 2 + i
               node.y1 = node.y0 + node.value * ky
             }
