@@ -70,6 +70,23 @@ function find(nodeById, id) {
         link.circular = true
         link.circularLinkID = circularLinkID
         circularLinkID = circularLinkID + 1
+
+        //if either souce or target has type already use that
+        if ( link.source.circularLinkType || link.target.circularLinkType) {
+          //default to source type if available
+          link.circularLinkType = link.source.circularLinkType ? link.source.circularLinkType : link.target.circularLinkType;
+
+        }
+        else {
+          link.circularLinkType = link.circularLinkID % 2 == 0
+            ? 'bottom'
+            : 'top'
+        }
+        graph.nodes.forEach(function (node) {
+          if (node.name == link.source.name || node.name == link.target.name) {
+            node.circularLinkType = link.circularLinkType
+          }
+        })
       } else {
         link.circular = false
         addedLinks.push(link)
@@ -81,6 +98,10 @@ function find(nodeById, id) {
   function createsCycle (originalSource, nodeToCheck, graph) {
     if (graph.length == 0) {
       return false
+    }
+
+    if(originalSource === nodeToCheck) {
+      return true
     }
 
     var nextLinks = findLinksOutward(nodeToCheck, graph)
